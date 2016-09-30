@@ -23,10 +23,6 @@ class Moodle2 {
     constructor(username, password, callback) {        
         this.session = request.defaults({jar: true});
         this.isAuthed = false;
-        this.homePage = null;
-        this.homePage$ = null;
-        this.courses = {};
-        this.courseTitles = [];
         
         if (username && password) {
             this.login(username, password, callback);
@@ -55,9 +51,7 @@ class Moodle2 {
         });
     }
     
-    // Populates this.courses with the course list on the home page
-    // this.courses: {"<coursename>": {title: title, url: url}}
-    // this.courseTitles = [<list of course names>]
+    // Returns list of courses
     getCourses(callback) {
         if (!this.isAuthed) {
             console.error("Do login first!");
@@ -74,86 +68,63 @@ class Moodle2 {
             }
             
             let $ = cheerio.load(body);
-            this.homePage = httpResponse;
-            this.homePage$ = $;
-            this.courses = {};
-            this.courseTitles = [];
+            let courseElements = $("div .course_title a");
+            let courses = [];
             
-            let self = this;
-            
-            $("div .course_title a").each(function(i, elem) {
-                let courseElement = $(this);
-                let courseTitle = courseElement.text();
-                
-                self.courseTitles[i] = courseTitle;
-                self.courses[courseTitle] = {
-                    title: courseTitle,
+            courseElements.each((i, elem) => {
+                let courseElement = $(elem);
+                courses[i] = {
+                    title: courseElement.text(),
                     url: courseElement.attr("href")
                 };
             }); 
             
             console.log("Course list obtained!");
-            callback(null, this.courseTitles, this.courses);
+            callback(null, courses);
         });
     }
     
-    // Takes a course object from this.courses
-    // Modifies course object
-    // course.folders: {"<section name>": [<list of folders>]}
-    getFoldersInCourse(courseTitle, callback) {
+    // Returns object of {section: [<folder list>]}
+    getFoldersInCourse(courseUrl, callback) {
         if (!this.isAuthed) {
             console.error("Do login first!");
             let err = new Error("Not logged in.");
             return callback(err);
         }
         
-        if (!this.courseTitles.includes(courseTitle)) {
-            console.error("getFoldersInCourse: course not present in Moodle2 object!")
-            let err = new Error("Invalid course passed to getFoldersInCourse.")
-            return callback(err)
-        }
-        
-        let course = this.courses[courseTitle];
-        
-        let title = course.title;
-        let url = course.url;
-        
-        this.session.get({url: url}, (err, httpResponse, body) => {
+        this.session.get({url: courseUrl}, (err, httpResponse, body) => {
             if (err) {
                 console.error("Error in getFoldersInCourse: " + err);
                 return callback(err);
             }
             
             let $ = cheerio.load(body);
-            course.response = httpResponse;
-            course.response$ = $;
-            course.folders = {};
+            let sections = {};
+            let sectionElements = $("li.section.main.clearfix");  // sections e.g. Week 1 Lectures
             
-            let sectionElements = $("li.section.main.clearfix")  // sections e.g. Week 1 Lectures
-            
-            sectionElements.each(function(i, elem) {
-                let sectionElement = $(this);
-                let folderElements = sectionElement.find("li.folder a");
+            sectionElements.each((i, elem) => {
+                let sectionElement = $(elem);
                 let sectionTitle = sectionElement.attr("aria-label");
-                let sectionFolders = [];
+                let folderElements = sectionElement.find("li.folder a");
+                let folders = [];
                 
                 folderElements.find("span").find("span").remove();  // remove unnecessary formatting
                 
-                folderElements.each(function(i, elem) {
-                    let folderElement = $(this);
+                folderElements.each((i, elem) => {
+                    let folderElement = $(elem);
                     
-                    sectionFolders[i] = {
+                    folders[i] = {
                         title: folderElement.find("span").text(),
                         url: folderElement.attr("href")
                     };
                 });
                 
-                course.folders[sectionTitle] = sectionFolders;
+                sections[sectionTitle] = folders;
             });
             
-            console.log("Folder list obtained!");
-            callback(null, course.folders);
-        })
+            console.log("Folder list for " + courseUrl + " obtained!");
+            callback(null, sections);
+        });
     }
     
     getFilesToDownload(url, callback) {
