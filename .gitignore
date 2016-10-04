@@ -1,6 +1,11 @@
-# Brackets.io editor config files
+# editor config files
 .eslintrc
+.eslintrc*
 .tern-project
+jsconfig.json
+.vscode
+/typings
+typings.json
 
 # env2 configuration file for initialising process.env values
 .env
